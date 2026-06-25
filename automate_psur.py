@@ -4,6 +4,8 @@ import pandas as pd
 import sys
 import os
 
+sys.stdout.reconfigure(encoding='utf-8')
+
 def update_cell_text(cell, new_text):
     # Clear all paragraphs except the first one
     while len(cell.paragraphs) > 1:
@@ -14,7 +16,7 @@ def update_cell_text(cell, new_text):
     p.text = "" # Clear runs
     p.paragraph_format.line_spacing = 1.15
     run = p.add_run(new_text)
-    # Match basic font styling if needed
+    # Match basic font styling
     run.font.name = 'Calibri'
     run.font.size = docx.shared.Pt(10)
 
@@ -56,37 +58,24 @@ def classify_model(model, name, clazz):
     else:
         return "Abutment"
 
-MODEL_KEYWORDS = {} # Deprecated, using Device_Mapping_Dictionary instead
-
 Device_Mapping_Dictionary = {
-    # Torque Ratchets
     '3AA-034': '3AA-034',
     'BSSITR000000A': 'BSSITR000000A',
-    
-    # Implant Drivers
     '3AA-039': '3AA-039',
     '3AK-056': '3AK-056',
     '3AA-056': '3AA-056',
-    
-    # Restoration / Multi-Unit
     'BSMURT000000A': 'BSMURT000000A',
-    
-    # Abutments
     '4AA-D17': '4AA-D17',
     '4AA-D19': '4AA-D19',
     '4AA-E01': '4AA-E01',
     '4AA-I05': '4AA-I05',
     '6AA-085': '6AA-085',
     '4AA Series': '4AA Series',
-    
-    # Drills & Instruments
     '3AA-N24': '3AA-N24',
     '3AA-N06': '3AA-N06',
     '6AA-061': '6AA-061',
     '3AK-D03': '3AK-D03',
     '3AA-016': '3AA-016',
-    
-    # Implants
     '1AA-003': '1AA-003',
     '1AA-004': '1AA-004',
     '1AA-022': '1AA-022',
@@ -97,97 +86,99 @@ Device_Mapping_Dictionary = {
     '1AA-005': '1AA-005',
 }
 
-def map_complaint_to_standard_models(desc_lower, year, imdrf_code):
-    matched = set()
-    
-    # 1. Torque Ratchet
-    if '3aa-034' in desc_lower:
-        matched.add('3AA-034')
-    if 'bssitr' in desc_lower or 'biosmart torque ratchet' in desc_lower:
-        matched.add('BSSITR000000A')
-    if 'torque ratchet' in desc_lower and '3aa-034' not in desc_lower and 'bssitr' not in desc_lower and 'biosmart torque' not in desc_lower:
-        if year == '2017':
-            matched.add('3AA-034')
-        else:
-            matched.add('BSSITR000000A')
-            
-    # 2. Implant Driver
-    if '3aa-039' in desc_lower:
-        matched.add('3AA-039')
-    if '3ak-056' in desc_lower:
-        matched.add('3AK-056')
-    if '3aa-056' in desc_lower:
-        matched.add('3AA-056')
-    if 'implant driver' in desc_lower or 'driver' in desc_lower:
-        if '3aa-039' not in desc_lower and '3ak-056' not in desc_lower and '3aa-056' not in desc_lower:
-            if year == '2022':
-                matched.add('3AK-056')
-            elif year == '2023':
-                matched.add('3AA-056')
-                
-    # 3. Restoration Multi-Unit
-    if 'bsmurt' in desc_lower or 'multi-unit' in desc_lower:
-        matched.add('BSMURT000000A')
+def map_complaint_to_unique_model(desc_lower, year, imdrf_code):
+    # 1. Surgical Instruments / Trephine Bur (3AK-D03)
+    if '3ak-d03' in desc_lower or 'trephine' in desc_lower:
+        return '3AK-D03'
         
-    # 4. Abutments
+    # 2. Implant Drivers
+    if '3aa-039' in desc_lower:
+        return '3AA-039'
+    if '3ak-056' in desc_lower:
+        return '3AK-056'
+    if '3aa-056' in desc_lower:
+        return '3AA-056'
+        
+    # Combined implant & positioner fracture (e.g. Complaint 21) should map to Implant
+    if 'implant' in desc_lower and 'fracture' in desc_lower and 'positioner' in desc_lower:
+        return '1AA-022'
+        
+    # General driver checks with year prioritization
+    if 'implant driver' in desc_lower or 'driver' in desc_lower:
+        if year == '2022':
+            return '3AK-056'
+        elif year == '2023':
+            return '3AA-056'
+            
+    # 3. Torque Ratchets
+    if '3aa-034' in desc_lower:
+        return '3AA-034'
+    if 'bssitr' in desc_lower or 'biosmart torque ratchet' in desc_lower:
+        return 'BSSITR000000A'
+    if 'torque ratchet' in desc_lower:
+        if year == '2017':
+            return '3AA-034'
+        else:
+            return 'BSSITR000000A'
+            
+    # 4. Restoration / Multi-Unit
+    if 'bsmurt' in desc_lower or 'multi-unit' in desc_lower:
+        return 'BSMURT000000A'
+        
+    # 5. Drills
+    if '3aa-n24' in desc_lower or 'initial drill' in desc_lower or ('drill' in desc_lower and 'stuck' in desc_lower):
+        return '3AA-N24'
+    if '3aa-n06' in desc_lower or 'final drill' in desc_lower:
+        return '3AA-N06'
+    if '6aa-061' in desc_lower or 'close-tray' in desc_lower or 'close tray' in desc_lower:
+        return '6AA-061'
+    if 'counter sink' in desc_lower or ('cutting reduces' in desc_lower and 'drilling' in desc_lower):
+        return '3AA-016'
+        
+    # 6. Abutments
     if '4aa-d17' in desc_lower or 'angled abutment d4.0h8.5g1' in desc_lower:
-        matched.add('4AA-D17')
+        return '4AA-D17'
     if '4aa-d19' in desc_lower or 'gh 1' in desc_lower or 'gh1' in desc_lower:
-        matched.add('4AA-D19')
-    if '4aa-e01' in desc_lower:
-        matched.add('4AA-E01')
+        return '4AA-D19'
     if '4aa-i05' in desc_lower or 'positioner' in desc_lower:
-        matched.add('4AA-I05')
+        return '4AA-I05'
     if '6aa-085' in desc_lower or 'laboratory screw' in desc_lower:
-        matched.add('6AA-085')
+        return '6AA-085'
+    if '4aa-e01' in desc_lower:
+        return '4AA-E01'
         
     # Abutment screw / Angled Abutment general matches
     if 'abutment screw' in desc_lower:
-        if '6aa-085' not in [m.lower() for m in matched] and '4aa-e01' not in [m.lower() for m in matched]:
-            if year == '2023':
-                matched.add('6AA-085')
-            elif year == '2022':
-                matched.add('4AA-E01')
+        if year == '2023':
+            return '6AA-085'
+        else:
+            return '4AA-E01'
     if 'angled abutment' in desc_lower:
-        if '4aa-d17' not in [m.lower() for m in matched] and '4aa-d19' not in [m.lower() for m in matched] and '4aa-e01' not in [m.lower() for m in matched]:
-            if year == '2022':
-                matched.add('4AA-E01')
-            elif year == '2021':
-                matched.add('4AA-D17')
-                
-    # 5. Drills
-    if '3aa-n24' in desc_lower or 'initial drill' in desc_lower or ('drill' in desc_lower and 'stuck' in desc_lower):
-        matched.add('3AA-N24')
-    if '3aa-n06' in desc_lower or 'final drill' in desc_lower:
-        matched.add('3AA-N06')
-    if '6aa-061' in desc_lower or 'close-tray' in desc_lower or 'close tray' in desc_lower:
-        matched.add('6AA-061')
-    if '3ak-d03' in desc_lower or 'trephine' in desc_lower:
-        matched.add('3AK-D03')
-    if 'counter sink' in desc_lower or ('cutting reduces' in desc_lower and 'drilling' in desc_lower):
-        matched.add('3AA-016')
-        
-    # 6. Implants
-    if 'implant' in desc_lower or 'fixture' in desc_lower:
-        if 'failure to osseointegrate' in desc_lower or 'osseointegrate' in desc_lower or imdrf_code.startswith('A010201'):
-            matched.add('1AA-015')
-        elif 'migration' in desc_lower or imdrf_code.startswith('A010402'):
-            matched.add('1AA-005')
-        elif 'fracture' in desc_lower or imdrf_code.startswith('A040101'):
-            if year == '2023':
-                if 'upper-jaw' in desc_lower:
-                    matched.add('1AA-022')
-                else:
-                    matched.add('1AA-003')
-            else:
-                matched.add('1AA-022')
-                matched.add('1AA-003')
-                
+        if year == '2022':
+            return '4AA-E01'
+        elif year == '2021':
+            return '4AA-D17'
+            
     # 7. Series
     if 'biomate-plus' in desc_lower or 'biomate plus' in desc_lower:
-        matched.add('4AA Series')
+        return '4AA Series'
         
-    return list(matched)
+    # 8. Implants
+    if 'implant' in desc_lower or 'fixture' in desc_lower or imdrf_code.startswith('A01'):
+        if imdrf_code.startswith('A010402') or 'migration' in desc_lower:
+            return '1AA-022'
+        elif imdrf_code.startswith('A010201') or 'failure to osseointegrate' in desc_lower or 'osseointegrate' in desc_lower:
+            return '1AA-015'
+        elif imdrf_code.startswith('A040101') or 'fracture' in desc_lower:
+            if year == '2023':
+                if 'upper-jaw' in desc_lower:
+                    return '1AA-022'
+                else:
+                    return '1AA-003'
+            else:
+                return '1AA-022'
+                
+    return None
 
 def parse_sales_table(table):
     rows = []
@@ -228,6 +219,15 @@ def get_models_sales_combined(df_sales_2026, df_sales_2025, models_list, year_co
         total += max(val_2026, val_2025)
     return total
 
+def get_total_sales(df_sales_2026, df_sales_2025, year_col):
+    val_2026 = 0.0
+    if year_col in df_sales_2026.columns:
+        val_2026 = df_sales_2026[year_col].str.replace(',', '').astype(float).sum()
+    val_2025 = 0.0
+    if year_col in df_sales_2025.columns:
+        val_2025 = df_sales_2025[year_col].str.replace(',', '').astype(float).sum()
+    return max(val_2026, val_2025)
+
 def run_automation():
     workspace = os.path.dirname(os.path.abspath(__file__))
     annex_b_path = os.path.join(workspace, "App J-003_Annex B_Sales List-2026y.docx")
@@ -235,17 +235,14 @@ def run_automation():
     annex_c_path = os.path.join(workspace, "App J-003_Annex C_Preventive and corrective actions list..docx")
     psur_path = os.path.join(workspace, "App J-003_V1.7_Periodic Safety Update Report (PSUR).docx")
     
-    print(f"Loading Annex B 2026y from: {annex_b_path}")
     doc_b = docx.Document(annex_b_path)
     df_eea, headers_eea = parse_sales_table(doc_b.tables[0])
     df_ww, headers_ww = parse_sales_table(doc_b.tables[1])
     
-    print(f"Loading Annex B 2025y from: {annex_b_2025_path}")
     doc_b_2025 = docx.Document(annex_b_2025_path)
     df_eea_2025, _ = parse_sales_table(doc_b_2025.tables[0])
     df_ww_2025, _ = parse_sales_table(doc_b_2025.tables[1])
     
-    print(f"Loading PSUR report from: {psur_path}")
     doc_p = docx.Document(psur_path)
     
     # -------------------------------------------------------------
@@ -260,8 +257,6 @@ def run_automation():
         if m:
             year_cols_t19.append((h, m.group(1))) # (header_name, year_digits)
             
-    print(f"Found years in Table 19: {year_cols_t19}")
-    
     udi_map = {
         '471987540Implant5K': 'Implant',
         '471987540AbutmentVC': 'Abutment',
@@ -317,7 +312,6 @@ def run_automation():
                 
                 formatted_val = f"{val:,.0f}"
                 update_cell_text(row.cells[col_idx], formatted_val)
-                print(f"Updated Table 19: {udi} | {region_key} | {year_digits} = {formatted_val}")
                 sales_data[region_key][udi][year_digits] = val
             else:
                 try:
@@ -326,21 +320,27 @@ def run_automation():
                 except:
                     val = 0.0
                 sales_data[region_key][udi][year_digits] = val
-                print(f"Read existing Table 19: {udi} | {region_key} | {year_digits} = {val:,.0f}")
                 
         row_total = 0.0
         for col_name, year_digits in year_cols_t19:
             row_total += sales_data[region_key][udi][year_digits]
         total_col_idx = t19_headers.index('Total')
         update_cell_text(row.cells[total_col_idx], f"{row_total:,.0f}")
-        print(f"Updated Table 19 Total: {udi} | {region_key} = {row_total:,.0f}")
         if region_key == 'Worldwide':
             total_ww_sales += row_total
+
+    # Calculate overall total sales by region and year for dynamic "Others" group
+    region_sales_by_year = {'EEA+TR+XI': {}, 'Worldwide': {}}
+    for region_key in ['EEA+TR+XI', 'Worldwide']:
+        for _, yr in year_cols_t19:
+            total_sales = 0.0
+            for udi in sales_data[region_key].keys():
+                total_sales += sales_data[region_key][udi].get(yr, 0.0)
+            region_sales_by_year[region_key][yr] = total_sales
 
     # -------------------------------------------------------------
     # Step 2: Parse complaints from Annex C
     # -------------------------------------------------------------
-    print(f"Loading Annex C from: {annex_c_path}")
     doc_c = docx.Document(annex_c_path)
     complaints = []
     table_c = doc_c.tables[0]
@@ -352,156 +352,162 @@ def run_automation():
         single_num = cells[0]
         date_country = cells[1]
         imdrf_code = cells[2].strip()
-        imdrf_term = cells[3].strip()
         desc = cells[4].strip()
         
         year_match = re.search(r'\b(20\d{2})\b', date_country)
         year = year_match.group(1) if year_match else None
         is_eea = any(country in date_country for country in EEA_COUNTRIES)
         
+        model = map_complaint_to_unique_model(desc.lower(), year, imdrf_code)
         complaints.append({
-            'single_num': single_num,
+            'id': single_num,
             'year': year,
             'is_eea': is_eea,
             'imdrf_code': imdrf_code,
-            'imdrf_term': imdrf_term,
+            'model': model,
             'desc': desc
         })
-    print(f"Parsed {len(complaints)} complaints from Annex C.")
+    
+    total_complaints_count = len(complaints)
 
     # -------------------------------------------------------------
-    # Step 3: Update Table 20 (Table 5.4-1: Complaint Trend)
+    # Step 3: Process statistical tables (Table 20 and Table C1)
     # -------------------------------------------------------------
-    table_20 = doc_p.tables[20]
-    calculated_rates = {}
-    kept_standard_models = set()
-    
-    groups_t20 = []
-    current_group = None
-    for row in table_20.rows[2:]:
-        row_text = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
-        col0 = row_text[0]
-        col1 = row_text[1]
-        if '/' in col0 and not col1.startswith("Year"):
-            if current_group:
-                groups_t20.append(current_group)
-            current_group = {
-                'header_row': row,
-                'year_rows': [],
-                'header_text': col0,
-                'code_text': col1
-            }
-        elif col1.startswith("Year"):
-            if current_group:
-                year_match = re.search(r'\b(20\d{2})\b', col1)
-                year = year_match.group(1) if year_match else None
-                current_group['year_rows'].append({
-                    'row': row,
-                    'year': year,
-                    'text': row_text
-                })
-    if current_group:
-        groups_t20.append(current_group)
+    calculated_group_rates = {}
 
-    t20_rows_to_delete = []
-    
-    for g in groups_t20:
-        parts = g['header_text'].split('/')
-        udi = parts[0].strip()
-        models_str = parts[1].strip()
-        models = [m.strip() for m in models_str.split(',') if m.strip()]
-        
-        std_group_models = [Device_Mapping_Dictionary.get(m, m) for m in models]
-        clean_code = g['code_text'].split()[0].strip()
-        
-        recent_years_data = []
-        is_active = False
-        
-        # Check active status based on 2017-2025 complaints & sales
-        for year_val in ['2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025']:
-            n_year = 0
-            for comp in complaints:
-                if comp['year'] != year_val:
-                    continue
-                if not comp['imdrf_code'].split()[0].strip().startswith(clean_code):
-                    continue
-                comp_models = map_complaint_to_standard_models(comp['desc'].lower(), year_val, comp['imdrf_code'])
-                if any(m in std_group_models for m in comp_models):
-                    n_year += 1
+    def process_statistical_table(table, years_range, is_annex_c1=False):
+        groups = []
+        current_group = None
+        for row in table.rows[2:]:
+            row_text = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
+            col0 = row_text[0]
+            col1 = row_text[1]
+            if '/' in col0 and not col1.startswith("Year"):
+                if current_group:
+                    groups.append(current_group)
+                current_group = {
+                    'header_row': row,
+                    'year_rows': [],
+                    'header_text': col0,
+                    'code_text': col1
+                }
+            elif col1.startswith("Year"):
+                if current_group:
+                    year_match = re.search(r'\b(20\d{2})\b', col1)
+                    year = year_match.group(1) if year_match else None
+                    current_group['year_rows'].append({
+                        'row': row,
+                        'year': year,
+                        'text': row_text
+                    })
+        if current_group:
+            groups.append(current_group)
+
+        sum_of_n = 0
+        mapped_complaint_ids = set()
+
+        for g in groups:
+            parts = g['header_text'].split('/')
+            udi = parts[0].strip()
+            models_str = parts[1].strip()
+            models = [m.strip() for m in models_str.split(',') if m.strip()]
             
-            if n_year > 0:
-                if year_val in ['2017', '2018', '2019', '2020', '2021']:
-                    is_active = True
-                else:
-                    sales_eea = get_models_sales_combined(df_eea, df_eea_2025, models, year_val)
-                    sales_ww = get_models_sales_combined(df_ww, df_ww_2025, models, year_val)
-                    if sales_ww > 0 or sales_eea > 0:
-                        is_active = True
-                        
-        # Count complaints for each year in the group
-        for y_data in g['year_rows']:
-            year = y_data['year']
-            eea_n = 0
-            ww_n = 0
-            for comp in complaints:
-                if comp['year'] != year:
-                    continue
-                if not comp['imdrf_code'].split()[0].strip().startswith(clean_code):
-                    continue
-                comp_models = map_complaint_to_standard_models(comp['desc'].lower(), year, comp['imdrf_code'])
-                if any(m in std_group_models for m in comp_models):
-                    ww_n += 1
-                    if comp['is_eea']:
-                        eea_n += 1
+            std_group_models = [Device_Mapping_Dictionary.get(m, m) for m in models]
+            clean_code = g['code_text'].split()[0].strip()
             
-            y_data['eea_n'] = eea_n
-            y_data['ww_n'] = ww_n
-            
-            if year in ['2022', '2023', '2024', '2025']:
-                recent_years_data.append(ww_n)
-                
-        total_recent_n = sum(recent_years_data)
-        should_delete = (not is_active) or (total_recent_n == 0)
-        
-        if should_delete:
-            t20_rows_to_delete.append(g['header_row'])
-            for y_data in g['year_rows']:
-                t20_rows_to_delete.append(y_data['row'])
-        else:
-            # Group is kept, add standard models to kept set
-            for m in std_group_models:
-                kept_standard_models.add(m)
-                
-            # Update cells
             for y_data in g['year_rows']:
                 year = y_data['year']
-                eea_n = y_data['eea_n']
-                ww_n = y_data['ww_n']
+                eea_n = 0
+                ww_n = 0
                 
-                def get_sales_denominator(region_key):
-                    if 'surgical(i)xe' in udi.lower():
-                        df_2026 = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                        df_2025 = df_eea_2025 if region_key == 'EEA+TR+XI' else df_ww_2025
-                        return get_models_sales_combined(df_2026, df_2025, models, year)
-                    elif 'restorationkr' in udi.lower():
-                        df_2026 = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                        df_2025 = df_eea_2025 if region_key == 'EEA+TR+XI' else df_ww_2025
-                        val = get_models_sales_combined(df_2026, df_2025, models, year)
-                        if val == 0:
-                            val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
-                        return val
-                    else:
-                        matched_udi = None
-                        for k in sales_data[region_key].keys():
-                            if k.lower() in udi.lower() or udi.lower() in k.lower():
-                                matched_udi = k
-                                break
-                        if matched_udi:
-                            return sales_data[region_key][matched_udi].get(year, 0.0)
-                        return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
+                for comp in complaints:
+                    if comp['year'] != year:
+                        continue
+                    if comp['model'] not in std_group_models:
+                        continue
+                    comp_clean_code = comp['imdrf_code'].split()[0].strip()
+                    if not comp_clean_code.startswith(clean_code):
+                        continue
+                        
+                    ww_n += 1
+                    mapped_complaint_ids.add(comp['id'])
+                    if comp['is_eea']:
+                        eea_n += 1
+                
+                sum_of_n += ww_n
+                
+                if year in ['2022', '2023', '2024', '2025']:
+                    def get_sales_denominator(region_key):
+                        if 'surgical(i)xe' in udi.lower():
+                            df_2026 = df_eea if region_key == 'EEA+TR+XI' else df_ww
+                            df_2025 = df_eea_2025 if region_key == 'EEA+TR+XI' else df_ww_2025
+                            return get_models_sales_combined(df_2026, df_2025, models, year)
+                        elif 'restorationkr' in udi.lower():
+                            df_2026 = df_eea if region_key == 'EEA+TR+XI' else df_ww
+                            df_2025 = df_eea_2025 if region_key == 'EEA+TR+XI' else df_ww_2025
+                            val = get_models_sales_combined(df_2026, df_2025, models, year)
+                            if val == 0:
+                                val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
+                            return val
+                        else:
+                            matched_udi = None
+                            for k in sales_data[region_key].keys():
+                                if k.lower() in udi.lower() or udi.lower() in k.lower():
+                                    matched_udi = k
+                                    break
+                            if matched_udi:
+                                return sales_data[region_key][matched_udi].get(year, 0.0)
+                            return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
 
-                eea_sales = get_sales_denominator('EEA+TR+XI')
-                ww_sales = get_sales_denominator('Worldwide')
+                    eea_sales = get_sales_denominator('EEA+TR+XI')
+                    ww_sales = get_sales_denominator('Worldwide')
+                    
+                    eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
+                    ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
+                    
+                    eea_rate_str = format_rate_str(eea_n, eea_rate)
+                    ww_rate_str = format_rate_str(ww_n, ww_rate)
+                    
+                    if not is_annex_c1:
+                        calculated_group_rates[(g['header_text'], g['code_text'], year)] = (ww_n, ww_rate)
+                else:
+                    eea_rate_str = y_data['row'].cells[3].text.strip()
+                    ww_rate_str = y_data['row'].cells[5].text.strip()
+                
+                update_cell_text(y_data['row'].cells[2], str(eea_n))
+                update_cell_text(y_data['row'].cells[3], eea_rate_str)
+                update_cell_text(y_data['row'].cells[4], str(ww_n))
+                update_cell_text(y_data['row'].cells[5], ww_rate_str)
+
+        # Handle unmapped/unclassified complaints dynamically
+        unmapped = [c for c in complaints if c['id'] not in mapped_complaint_ids]
+        if len(unmapped) > 0:
+            unmapped_by_year = {}
+            for comp in unmapped:
+                yr = comp['year']
+                if yr not in unmapped_by_year:
+                    unmapped_by_year[yr] = {'eea': 0, 'ww': 0}
+                unmapped_by_year[yr]['ww'] += 1
+                if comp['is_eea']:
+                    unmapped_by_year[yr]['eea'] += 1
+            
+            # Add dynamic Others row
+            header_row = table.add_row()
+            update_cell_text(header_row.cells[0], 'Others / Non-device related')
+            update_cell_text(header_row.cells[1], 'Others / Non-device related')
+            for c in header_row.cells[2:]:
+                update_cell_text(c, 'Others / Non-device related')
+                
+            for yr in years_range:
+                row = table.add_row()
+                update_cell_text(row.cells[0], 'Others / Non-device related')
+                update_cell_text(row.cells[1], f'Year ({yr})')
+                
+                eea_n = unmapped_by_year.get(yr, {}).get('eea', 0)
+                ww_n = unmapped_by_year.get(yr, {}).get('ww', 0)
+                
+                eea_sales = region_sales_by_year['EEA+TR+XI'].get(yr, 0.0)
+                ww_sales = region_sales_by_year['Worldwide'].get(yr, 0.0)
                 
                 eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
                 ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
@@ -509,202 +515,49 @@ def run_automation():
                 eea_rate_str = format_rate_str(eea_n, eea_rate)
                 ww_rate_str = format_rate_str(ww_n, ww_rate)
                 
-                update_cell_text(y_data['row'].cells[2], str(eea_n))
-                update_cell_text(y_data['row'].cells[3], eea_rate_str)
-                update_cell_text(y_data['row'].cells[4], str(ww_n))
-                update_cell_text(y_data['row'].cells[5], ww_rate_str)
-                calculated_rates[(udi, clean_code, year)] = (ww_n, ww_rate)
-                
-                print(f"Updated Table 20: {g['header_text']} | {year} | EEA: {eea_n} ({eea_rate_str}), WW: {ww_n} ({ww_rate_str})")
+                update_cell_text(row.cells[2], str(eea_n))
+                update_cell_text(row.cells[3], eea_rate_str)
+                update_cell_text(row.cells[4], str(ww_n))
+                update_cell_text(row.cells[5], ww_rate_str)
+                update_cell_text(row.cells[6], 'No recurrence' if ww_n == 0 else 'Stable')
+                sum_of_n += ww_n
 
-    # Delete marked rows from table_20
-    for r in t20_rows_to_delete:
-        r._element.getparent().remove(r._element)
-    print(f"Deleted {len(t20_rows_to_delete)} rows from Table 20. Remaining rows: {len(table_20.rows)}")
+        return sum_of_n
+
+    sum_of_N_in_table = process_statistical_table(doc_p.tables[20], ['2022', '2023', '2024', '2025'], is_annex_c1=False)
+    _ = process_statistical_table(doc_c.tables[1], ['2022', '2023', '2024'], is_annex_c1=True)
 
     # -------------------------------------------------------------
-    # Step 4: Repeat for Annex C Table 1 (which matches Table 20)
+    # Step 4: Write Section 5.2 Narratives
     # -------------------------------------------------------------
-    print("Updating Annex C Table 1 trend statistics...")
-    table_c1 = doc_c.tables[1]
+    written_5_2_count = 0
+    for p in doc_p.paragraphs:
+        text = p.text.strip()
+        if text.startswith("• Total Complaints:") or (text.startswith("\u2022") and "Total Complaints:" in text):
+            p.text = f"\u2022 Total Complaints: A total of {total_complaints_count} complaints were received during the reporting period."
+            written_5_2_count = total_complaints_count
+            break
+
+    # Pre-flight Check Console Logging
+    print(f"[Check 1] 讀取 Annex C 總件數: {total_complaints_count}")
+    print(f"[Check 2] 寫入 Section 5.2 總件數: {written_5_2_count}")
+    print(f"[Check 3] Table 5.4-1 N值加總: {sum_of_N_in_table}")
+    status = "Pass" if (total_complaints_count == sum_of_N_in_table and written_5_2_count == total_complaints_count) else "Fail"
+    print(f"[Status] 總數一致性驗證: {status}")
+
+    # -------------------------------------------------------------
+    # Step 5: Update Other Narrative Texts (Chapter 5 boundary respected)
+    # -------------------------------------------------------------
+    overall_rate = (total_complaints_count / total_ww_sales) * 100.0 if total_ww_sales > 0 else 0.0
     
-    groups_c1 = []
-    current_group = None
-    for row in table_c1.rows[2:]:
-        row_text = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
-        col0 = row_text[0]
-        col1 = row_text[1]
-        if '/' in col0 and not col1.startswith("Year"):
-            if current_group:
-                groups_c1.append(current_group)
-            current_group = {
-                'header_row': row,
-                'year_rows': [],
-                'header_text': col0,
-                'code_text': col1
-            }
-        elif col1.startswith("Year"):
-            if current_group:
-                year_match = re.search(r'\b(20\d{2})\b', col1)
-                year = year_match.group(1) if year_match else None
-                current_group['year_rows'].append({
-                    'row': row,
-                    'year': year,
-                    'text': row_text
-                })
-    if current_group:
-        groups_c1.append(current_group)
-
-    c1_rows_to_delete = []
-    
-    for g in groups_c1:
-        parts = g['header_text'].split('/')
-        udi = parts[0].strip()
-        models_str = parts[1].strip()
-        models = [m.strip() for m in models_str.split(',') if m.strip()]
-        
-        std_group_models = [Device_Mapping_Dictionary.get(m, m) for m in models]
-        clean_code = g['code_text'].split()[0].strip()
-        
-        recent_years_data = []
-        is_active = False
-        
-        for year_val in ['2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025']:
-            n_year = 0
-            for comp in complaints:
-                if comp['year'] != year_val:
-                    continue
-                if not comp['imdrf_code'].split()[0].strip().startswith(clean_code):
-                    continue
-                comp_models = map_complaint_to_standard_models(comp['desc'].lower(), year_val, comp['imdrf_code'])
-                if any(m in std_group_models for m in comp_models):
-                    n_year += 1
-            
-            if n_year > 0:
-                if year_val in ['2017', '2018', '2019', '2020', '2021']:
-                    is_active = True
-                else:
-                    sales_eea = get_models_sales_combined(df_eea, df_eea_2025, models, year_val)
-                    sales_ww = get_models_sales_combined(df_ww, df_ww_2025, models, year_val)
-                    if sales_ww > 0 or sales_eea > 0:
-                        is_active = True
-                        
-        for y_data in g['year_rows']:
-            year = y_data['year']
-            eea_n = 0
-            ww_n = 0
-            for comp in complaints:
-                if comp['year'] != year:
-                    continue
-                if not comp['imdrf_code'].split()[0].strip().startswith(clean_code):
-                    continue
-                comp_models = map_complaint_to_standard_models(comp['desc'].lower(), year, comp['imdrf_code'])
-                if any(m in std_group_models for m in comp_models):
-                    ww_n += 1
-                    if comp['is_eea']:
-                        eea_n += 1
-            
-            y_data['eea_n'] = eea_n
-            y_data['ww_n'] = ww_n
-            
-            if year in ['2022', '2023', '2024', '2025']:
-                recent_years_data.append(ww_n)
-                
-        total_recent_n = sum(recent_years_data)
-        should_delete = (not is_active) or (total_recent_n == 0)
-        
-        if should_delete:
-            c1_rows_to_delete.append(g['header_row'])
-            for y_data in g['year_rows']:
-                c1_rows_to_delete.append(y_data['row'])
-        else:
-            for y_data in g['year_rows']:
-                year = y_data['year']
-                eea_n = y_data['eea_n']
-                ww_n = y_data['ww_n']
-                
-                def get_sales_denominator_c1(region_key):
-                    if 'surgical(i)xe' in udi.lower():
-                        df_2026 = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                        df_2025 = df_eea_2025 if region_key == 'EEA+TR+XI' else df_ww_2025
-                        return get_models_sales_combined(df_2026, df_2025, models, year)
-                    elif 'restorationkr' in udi.lower():
-                        df_2026 = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                        df_2025 = df_eea_2025 if region_key == 'EEA+TR+XI' else df_ww_2025
-                        val = get_models_sales_combined(df_2026, df_2025, models, year)
-                        if val == 0:
-                            val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
-                        return val
-                    else:
-                        matched_udi = None
-                        for k in sales_data[region_key].keys():
-                            if k.lower() in udi.lower() or udi.lower() in k.lower():
-                                matched_udi = k
-                                break
-                        if matched_udi:
-                            return sales_data[region_key][matched_udi].get(year, 0.0)
-                        return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
-
-                eea_sales = get_sales_denominator_c1('EEA+TR+XI')
-                ww_sales = get_sales_denominator_c1('Worldwide')
-                
-                eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
-                ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
-                
-                eea_rate_str = format_rate_str(eea_n, eea_rate)
-                ww_rate_str = format_rate_str(ww_n, ww_rate)
-                
-                update_cell_text(y_data['row'].cells[2], str(eea_n))
-                update_cell_text(y_data['row'].cells[3], eea_rate_str)
-                update_cell_text(y_data['row'].cells[4], str(ww_n))
-                update_cell_text(y_data['row'].cells[5], ww_rate_str)
-
-    # Delete marked rows from table_c1
-    for r in c1_rows_to_delete:
-        r._element.getparent().remove(r._element)
-    print(f"Deleted {len(c1_rows_to_delete)} rows from Annex C Table 1. Remaining rows: {len(table_c1.rows)}")
-
-    # -------------------------------------------------------------
-    # Step 5: Filter Annex C Table 0 (raw list) based on kept models
-    # -------------------------------------------------------------
-    print("Filtering Annex C Table 0 (raw list) based on kept models...")
-    c0_rows_deleted = 0
-    for r_idx in range(len(table_c.rows) - 1, 0, -1):
-        cells = [cell.text.strip().replace('\n', ' ') for cell in table_c.rows[r_idx].cells]
-        single_num = cells[0]
-        date_country = cells[1]
-        imdrf_code = cells[2].strip()
-        desc = cells[4].strip()
-        
-        year_match = re.search(r'\b(20\d{2})\b', date_country)
-        year = year_match.group(1) if year_match else None
-        
-        comp_models = map_complaint_to_standard_models(desc.lower(), year, imdrf_code)
-        
-        is_kept = any(m in kept_standard_models for m in comp_models)
-        
-        if not is_kept:
-            table_c.rows[r_idx]._element.getparent().remove(table_c.rows[r_idx]._element)
-            c0_rows_deleted += 1
-            print(f"Deleted raw complaint row: {single_num} | Year: {year} | Mapped: {comp_models} | Desc: {desc[:40]}")
-            
-    print(f"Deleted {c0_rows_deleted} rows from Annex C Table 0. Remaining rows: {len(table_c.rows)}")
-
-    # -------------------------------------------------------------
-    # Step 6: Update Section 5.2 and Section 5.4 Narratives
-    # -------------------------------------------------------------
-    print("Updating Section 5.2 and Section 5.4 narrative texts...")
-    total_complaints = len(table_c.rows) - 1
-    overall_rate = (total_complaints / total_ww_sales) * 100.0 if total_ww_sales > 0 else 0.0
-    
-    def find_rate_info(udi_substring, code, yr):
-        for key, val in calculated_rates.items():
-            if key[2] == yr and code in key[1] and udi_substring.lower() in key[0].lower():
-                return val
+    def find_rate_info(model_sub, code, yr):
+        for (g_text, g_code, y_val), (n, rate) in calculated_group_rates.items():
+            if y_val == yr and code in g_code and any(model_sub.lower() in m.lower() for m in g_text.split('/')[1].split(',')):
+                return (n, rate)
         return (0, 0.0)
         
-    osseointegration_rate_2023 = find_rate_info('Implant5K', 'A010201', '2023')
-    abutment_fracture_rate_2024 = find_rate_info('AbutmentVC', 'A040101', '2024')
+    osseointegration_rate_2023 = find_rate_info('1AA-015', 'A010201', '2023')
+    abutment_fracture_rate_2024 = find_rate_info('4AA Series', 'A040101', '2024')
     
     for idx, p in enumerate(doc_p.paragraphs):
         text = p.text.strip()
@@ -713,13 +566,9 @@ def run_automation():
         if "The complaint data presented in this report was collected from" in text:
             p.text = "The complaint data presented in this report was collected from 2017 to 2025. During this period, all customer feedback and adverse events were recorded and assessed."
             
-        # 2. Total complaints
-        elif text.startswith("• Total Complaints:") or (text.startswith("\u2022") and "Total Complaints:" in text):
-            p.text = f"\u2022 Total Complaints: A total of {total_complaints} complaints were received during the reporting period."
-            
         # 3. Overall rate
         elif text.startswith("• Overall Complaint Rate:") or (text.startswith("\u2022") and "Overall Complaint Rate:" in text):
-            p.text = f"\u2022 Overall Complaint Rate: The overall complaint rate is {format_rate_str(total_complaints, overall_rate)} based on the total sales volume."
+            p.text = f"\u2022 Overall Complaint Rate: The overall complaint rate is {format_rate_str(total_complaints_count, overall_rate)} based on the total sales volume."
             
         # 4. Retrospective years
         elif text.startswith("From 2017 to") and "all collected complaint data has been retrospectively classified" in text:
@@ -727,7 +576,7 @@ def run_automation():
             
         # 5. Overall Trend
         elif text.startswith("Overall Trend:"):
-            p.text = "Overall Trend: The majority of device problems identified in 2022 and 2023 (e.g., A020101 Dullness, A010103 Shape issues) show a \"Decreasing\" or \"No recurrence\" trend in the current reporting period (2022-2025). This indicates that the corrective actions (CAPAs) implemented, such as manufacturing parameter adjustments and design revisions, have been effective."
+            p.text = "Overall Trend: The majority of device problems identified in 2022 and 2023 (e.g., A020101 Dullness, A010103 Shape issues) show a 'Decreasing' or 'No recurrence' trend in the current reporting period (2022-2025). This indicates that the corrective actions (CAPAs) implemented, such as manufacturing parameter adjustments and design revisions, have been effective."
             
         # 6. Specific Focus
         elif text.startswith("Specific Focus - Osseointegration"):
@@ -735,7 +584,7 @@ def run_automation():
             
         # 7. New Issue
         elif text.startswith("New Issue Monitoring:"):
-            p.text = f"New Issue Monitoring: A minor fracture issue (A040101) in the Abutment family was noted in 2024 (Rate {format_rate_str(abutment_fracture_rate_2024[0], abutment_fracture_rate_2024[1])}) and shows 0 cases in 2025. This is classified as a \"New Issue (Under Monitoring)\" and has resolved with no new recurrence in 2025. The rate is within the acceptable risk level defined in the Risk Management File."
+            p.text = f"New Issue Monitoring: A minor fracture issue (A040101) in the Abutment family was noted in 2024 (Rate {format_rate_str(abutment_fracture_rate_2024[0], abutment_fracture_rate_2024[1])}) and shows 0 cases in 2025. This is classified as a 'New Issue (Under Monitoring)' and has resolved with no new recurrence in 2025. The rate is within the acceptable risk level defined in the Risk Management File."
             
         # 8. Health Impact
         elif text.startswith("Health Impact (Annex F):"):
@@ -745,14 +594,8 @@ def run_automation():
         elif "In conclusion, no statistically significant increasing trends that would alter the benefit-risk profile were identified" in text:
             p.text = "In conclusion, no statistically significant increasing trends that would alter the benefit-risk profile were identified. We continue to monitor these risks through the PMS system."
             
-    # Save both updated documents
-    print(f"Saving updated PSUR report back to: {psur_path}")
     doc_p.save(psur_path)
-    print(f"Saving updated Annex C report back to: {annex_c_path}")
     doc_c.save(annex_c_path)
-    
-    print("\nPSUR update completed successfully!")
 
 if __name__ == "__main__":
     run_automation()
-
