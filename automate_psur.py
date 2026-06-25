@@ -74,7 +74,7 @@ def get_models_sales(df_sales, models_list, year_col):
 
 def run_automation():
     workspace = os.path.dirname(os.path.abspath(__file__))
-    annex_b_path = os.path.join(workspace, "App J-003_Annex B_Sales List-2025y.docx")
+    annex_b_path = os.path.join(workspace, "App J-003_Annex B_Sales List-2026y.docx")
     annex_c_path = os.path.join(workspace, "App J-003_Annex C_Preventive and corrective actions list..docx")
     psur_path = os.path.join(workspace, "App J-003_V1.7_Periodic Safety Update Report (PSUR).docx")
     
@@ -222,7 +222,7 @@ def run_automation():
         col1 = row_text[1]
         
         # Update current header info if this is a header row
-        if '/' in col0:
+        if '/' in col0 and not col1.startswith("Year"):
             current_header = col0
             current_code = col1
             continue
@@ -360,7 +360,7 @@ def run_automation():
         col0 = row_text[0]
         col1 = row_text[1]
         
-        if '/' in col0:
+        if '/' in col0 and not col1.startswith("Year"):
             current_header = col0
             current_code = col1
             continue
