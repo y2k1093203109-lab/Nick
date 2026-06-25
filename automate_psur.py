@@ -465,8 +465,8 @@ def run_automation():
             ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
             
             # Formatting
-            eea_rate_str = f"{eea_rate:.2f} %" if eea_n > 0 else "0 %"
-            ww_rate_str = f"{ww_rate:.2f} %" if ww_n > 0 else "0 %"
+            eea_rate_str = f"{eea_rate:.2f}%"
+            ww_rate_str = f"{ww_rate:.2f}%"
             
             # Update cells
             # Table 20 columns: 0: Model group, 1: Year, 2: EEA N, 3: EEA Rate, 4: WW N, 5: WW Rate, 6: Trend
@@ -616,9 +616,9 @@ def run_automation():
             
             eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
             ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
-            
-            eea_rate_str = f"{eea_rate:.2f} %" if eea_n > 0 else "0 %"
-            ww_rate_str = f"{ww_rate:.2f} %" if ww_n > 0 else "0 %"
+            # Formatting
+            eea_rate_str = f"{eea_rate:.2f}%"
+            ww_rate_str = f"{ww_rate:.2f}%"
             
             t_row = table_c1.rows[r_idx + 2]
             update_cell_text(t_row.cells[2], str(eea_n))
