@@ -18,6 +18,14 @@ def update_cell_text(cell, new_text):
     run.font.name = 'Calibri'
     run.font.size = docx.shared.Pt(10)
 
+def format_rate_str(n, rate):
+    if n == 0:
+        return "0.00%"
+    elif rate < 0.005:
+        return "< 0.01%"
+    else:
+        return f"{rate:.2f}%"
+
 def classify_model(model, name, clazz):
     model = model.strip()
     name = name.lower()
@@ -465,8 +473,8 @@ def run_automation():
             ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
             
             # Formatting
-            eea_rate_str = f"{eea_rate:.2f}%"
-            ww_rate_str = f"{ww_rate:.2f}%"
+            eea_rate_str = format_rate_str(eea_n, eea_rate)
+            ww_rate_str = format_rate_str(ww_n, ww_rate)
             
             # Update cells
             # Table 20 columns: 0: Model group, 1: Year, 2: EEA N, 3: EEA Rate, 4: WW N, 5: WW Rate, 6: Trend
@@ -477,7 +485,7 @@ def run_automation():
             update_cell_text(t20_row.cells[3], eea_rate_str)
             update_cell_text(t20_row.cells[4], str(ww_n))
             update_cell_text(t20_row.cells[5], ww_rate_str)
-            calculated_rates[(udi, clean_code, year)] = ww_rate
+            calculated_rates[(udi, clean_code, year)] = (ww_n, ww_rate)
             
             print(f"Updated Table 20 Row {r_idx+2}: {current_header} | {year} | EEA: {eea_n} ({eea_rate_str}), WW: {ww_n} ({ww_rate_str})")
 
@@ -488,14 +496,14 @@ def run_automation():
     total_complaints = len(complaints)
     overall_rate = (total_complaints / total_ww_sales) * 100.0 if total_ww_sales > 0 else 0.0
     
-    def find_rate(udi_substring, code, yr):
+    def find_rate_info(udi_substring, code, yr):
         for key, val in calculated_rates.items():
             if key[2] == yr and code in key[1] and udi_substring.lower() in key[0].lower():
                 return val
-        return 0.0
+        return (0, 0.0)
         
-    osseointegration_rate_2023 = find_rate('Implant5K', 'A010201', '2023')
-    abutment_fracture_rate_2024 = find_rate('AbutmentVC', 'A040101', '2024')
+    osseointegration_rate_2023 = find_rate_info('Implant5K', 'A010201', '2023')
+    abutment_fracture_rate_2024 = find_rate_info('AbutmentVC', 'A040101', '2024')
     
     for idx, p in enumerate(doc_p.paragraphs):
         text = p.text.strip()
@@ -510,7 +518,7 @@ def run_automation():
             
         # 3. Overall rate
         elif text.startswith("• Overall Complaint Rate:") or (text.startswith("\u2022") and "Overall Complaint Rate:" in text):
-            p.text = f"\u2022 Overall Complaint Rate: The overall complaint rate is {overall_rate:.2f}% based on the total sales volume."
+            p.text = f"\u2022 Overall Complaint Rate: The overall complaint rate is {format_rate_str(total_complaints, overall_rate)} based on the total sales volume."
             
         # 4. Retrospective years
         elif text.startswith("From 2017 to") and "all collected complaint data has been retrospectively classified" in text:
@@ -522,11 +530,11 @@ def run_automation():
             
         # 6. Specific Focus
         elif text.startswith("Specific Focus - Osseointegration"):
-            p.text = f"Specific Focus - Osseointegration (A010201): An increase was observed in 2023 (Rate {osseointegration_rate_2023:.2f}%). However, data for 2024 and 2025 shows 0 cases, confirming that this was not a systemic product defect but likely associated with isolated clinical factors. The trend is assessed as Decreasing."
+            p.text = f"Specific Focus - Osseointegration (A010201): An increase was observed in 2023 (Rate {format_rate_str(osseointegration_rate_2023[0], osseointegration_rate_2023[1])}). However, data for 2024 and 2025 shows 0 cases, confirming that this was not a systemic product defect but likely associated with isolated clinical factors. The trend is assessed as Decreasing."
             
         # 7. New Issue
         elif text.startswith("New Issue Monitoring:"):
-            p.text = f"New Issue Monitoring: A minor fracture issue (A040101) in the Abutment family was noted in 2024 (Rate {abutment_fracture_rate_2024:.2f}%) and shows 0 cases in 2025. This is classified as a \"New Issue (Under Monitoring)\" and has resolved with no new recurrence in 2025. The rate is within the acceptable risk level defined in the Risk Management File."
+            p.text = f"New Issue Monitoring: A minor fracture issue (A040101) in the Abutment family was noted in 2024 (Rate {format_rate_str(abutment_fracture_rate_2024[0], abutment_fracture_rate_2024[1])}) and shows 0 cases in 2025. This is classified as a \"New Issue (Under Monitoring)\" and has resolved with no new recurrence in 2025. The rate is within the acceptable risk level defined in the Risk Management File."
             
         # 8. Health Impact
         elif text.startswith("Health Impact (Annex F):"):
@@ -617,8 +625,8 @@ def run_automation():
             eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
             ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
             # Formatting
-            eea_rate_str = f"{eea_rate:.2f}%"
-            ww_rate_str = f"{ww_rate:.2f}%"
+            eea_rate_str = format_rate_str(eea_n, eea_rate)
+            ww_rate_str = format_rate_str(ww_n, ww_rate)
             
             t_row = table_c1.rows[r_idx + 2]
             update_cell_text(t_row.cells[2], str(eea_n))
