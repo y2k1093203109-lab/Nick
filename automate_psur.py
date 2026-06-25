@@ -48,6 +48,162 @@ def classify_model(model, name, clazz):
     else:
         return "Abutment"
 
+MODEL_KEYWORDS = {
+    # Surgical instruments
+    '3AA-034': ['torque ratchet', 'ratchet', '3aa-034'],
+    '3AA-039': ['implant driver', 'driver', '3aa-039'],
+    'BSSITR000000A': ['torque ratchet', 'ratchet', 'bssitr'],
+    '3AK-D03': ['trephine', 'bur', '3ak-d03'],
+    '3AK-056': ['implant driver', 'driver', '3ak-056'],
+    '3AA-056': ['implant driver', 'driver', '3aa-056'],
+    '3AA-N24': ['initial drill', 'drill', '3aa-n24'],
+    '3AA-N06': ['final drill', 'drill', '3aa-n06'],
+    '3AA-016': ['drill', '3aa-016'],
+    '3AA-014': ['drill', '3aa-014'],
+    '3AA-015': ['drill', '3aa-015'],
+    
+    # Abutments
+    '4AA-D17': ['4aa-d17', 'angled abutment'],
+    '4AA-D19': ['4aa-d19', 'angled abutment', 'gh 1', 'gh1'],
+    '4AA-E01': ['4aa-e01', 'angled abutment'],
+    '4AA-I05': ['4aa-i05', 'positioner abutment', 'positioner'],
+    '6AA-061': ['6aa-061'],
+    '6AA-085': ['6aa-085', 'laboratory screw', 'screw'],
+    '4AA Series': ['4aa series', '4aa'],
+    
+    # Restoration Class I
+    'BSMURT000000A': ['bsmurt', 'multi-unit', 'adapter'],
+    
+    # Implants
+    '1AA-003': ['1aa-003', 'implant', 'fixture'],
+    '1AA-004': ['1aa-004', 'implant', 'fixture'],
+    '1AA-022': ['1aa-022', 'implant', 'fixture'],
+    '1AA-015': ['1aa-015', 'implant', 'fixture'],
+    '1AA-017': ['1aa-017', 'implant', 'fixture'],
+    '1AA-018': ['1aa-018', 'implant', 'fixture'],
+    '1AA-025': ['1aa-025', 'implant', 'fixture'],
+    '1AA-005': ['1aa-005', 'implant', 'fixture'],
+}
+
+def check_model_match(models, udi, desc_lower):
+    # 1. Exact model check
+    for m in models:
+        m_clean = re.sub(r'[^a-zA-Z0-9]', '', m.lower())
+        desc_clean = re.sub(r'[^a-zA-Z0-9]', '', desc_lower)
+        if m_clean in desc_clean:
+            return True
+
+    # 2. Keyword matching
+    for m in models:
+        m = m.strip()
+        m_lower = m.lower()
+
+        # Row: 3AA-N06 (Final Drill)
+        if m_lower == '3aa-n06':
+            if 'final' in desc_lower:
+                return True
+            continue
+
+        # Row: 3AA-016, 3AA-014, 3AA-015 (general drills)
+        if m_lower in ['3aa-016', '3aa-014', '3aa-015']:
+            if 'drill' in desc_lower and 'final' not in desc_lower and 'initial' not in desc_lower:
+                return True
+            continue
+
+        # Row: 3AA-N24 (Initial Drill)
+        if m_lower == '3aa-n24':
+            if 'drill' in desc_lower:
+                return True
+            continue
+
+        # Row: 4AA-I05 (Positioner Abutment)
+        if m_lower == '4aa-i05':
+            if 'positioner' in desc_lower and 'implant' not in desc_lower:
+                return True
+            continue
+
+        # Row: BSSITR000000A (Torque Ratchet)
+        if m_lower == 'bssitr000000a':
+            if 'ratchet' in desc_lower or 'bssitr' in desc_lower:
+                return True
+            continue
+
+        # Row: 3AA-034 (Torque Ratchet)
+        if m_lower == '3aa-034':
+            if 'ratchet' in desc_lower or '3aa-034' in desc_lower:
+                return True
+            continue
+
+        # Row: 3AK-D03 (Trephine Bur)
+        if m_lower == '3ak-d03':
+            if 'trephine' in desc_lower or 'bur' in desc_lower or '3ak-d03' in desc_lower:
+                return True
+            continue
+
+        # Row: 3AK-056 (Implant Driver)
+        if m_lower == '3ak-056':
+            if 'implant driver' in desc_lower or 'driver' in desc_lower or '3ak-056' in desc_lower:
+                return True
+            continue
+
+        # Row: 3AA-056 (Implant Driver)
+        if m_lower == '3aa-056':
+            if 'implant driver' in desc_lower or 'driver' in desc_lower or '3aa-056' in desc_lower:
+                return True
+            continue
+
+        # Row: 3AA-039 (Implant Driver)
+        if m_lower == '3aa-039':
+            if 'implant driver' in desc_lower or 'driver' in desc_lower or '3aa-039' in desc_lower:
+                return True
+            continue
+
+        # Row: 4AA-D17 (Angled Abutment)
+        if m_lower == '4aa-d17':
+            if '4aa-d17' in desc_lower or 'angled abutment' in desc_lower:
+                return True
+            continue
+
+        # Row: 4AA-D19 (Angled Abutment)
+        if m_lower == '4aa-d19':
+            if 'gh 1' in desc_lower or 'gh1' in desc_lower or '4aa-d19' in desc_lower:
+                return True
+            continue
+
+        # Row: 4AA-E01 (Angled Abutment)
+        if m_lower == '4aa-e01':
+            if 'angled abutment' in desc_lower or '4aa-e01' in desc_lower:
+                return True
+            continue
+
+        # Row: 6AA-085 (Laboratory Screw)
+        if m_lower == '6aa-085':
+            if 'screw' in desc_lower and not any(x in desc_lower for x in ['positioner', 'angled', 'biomate-plus', 'biomate plus']):
+                return True
+            continue
+
+        # Row: BSMURT000000A (Restoration Class I Multi-unit Adapter)
+        if m_lower == 'bsmurt000000a':
+            if 'bsmurt' in desc_lower or 'multi-unit' in desc_lower or 'adapter' in desc_lower:
+                return True
+            continue
+
+        # General Implants
+        if m_lower in ['1aa-003', '1aa-004', '1aa-022', '1aa-015', '1aa-017', '1aa-018', '1aa-025', '1aa-005']:
+            if 'implant' in desc_lower or 'fixture' in desc_lower:
+                return True
+            continue
+
+    # 3. Fallback for general Series rows
+    is_series_row = any('series' in m.lower() for m in models)
+    if is_series_row:
+        if 'abutmentvc' in udi.lower() and ('abutment' in desc_lower or 'screw' in desc_lower):
+            has_other_spec = any(kw in desc_lower for kw in ['4aa-e01', '4aa-i05', 'positioner', 'angled abutment'])
+            if not has_other_spec:
+                return True
+
+    return False
+
 def parse_sales_table(table):
     rows = []
     headers = [cell.text.strip().replace('\n', ' ') for cell in table.rows[0].cells]
@@ -257,30 +413,8 @@ def run_automation():
                     continue
                     
                 # Match models / category
-                model_match = False
                 desc_lower = comp['desc'].lower()
-                
-                # Check if specific models mentioned in header list match
-                for m in models:
-                    if 'Series' in m:
-                        prefix = m.replace('Series', '').strip()
-                        if prefix.lower() in desc_lower or 'abutment' in desc_lower:
-                            model_match = True
-                            break
-                    elif m.lower() in desc_lower:
-                        model_match = True
-                        break
-                        
-                # Fallback: if no specific model matched, check category
-                if not model_match:
-                    if 'implant5k' in udi.lower() and ('implant' in desc_lower or 'fixture' in desc_lower):
-                        model_match = True
-                    elif 'abutmentvc' in udi.lower() and ('abutment' in desc_lower or 'screw' in desc_lower):
-                        model_match = True
-                    elif 'restorationkr' in udi.lower() and ('abutment' in desc_lower or 'adapter' in desc_lower):
-                        model_match = True
-                    elif 'surgical' in udi.lower() and any(x in desc_lower for x in ["drill", "driver", "ratchet", "stopper", "taps", "pin", "punch", "sink", "bur"]):
-                        model_match = True
+                model_match = check_model_match(models, udi, desc_lower)
                 
                 if model_match:
                     ww_n += 1
@@ -447,28 +581,9 @@ def run_automation():
                 if not comp['imdrf_code'].startswith(clean_code):
                     continue
                     
-                model_match = False
+                # Match models / category
                 desc_lower = comp['desc'].lower()
-                
-                for m in models:
-                    if 'Series' in m:
-                        prefix = m.replace('Series', '').strip()
-                        if prefix.lower() in desc_lower or 'abutment' in desc_lower:
-                            model_match = True
-                            break
-                    elif m.lower() in desc_lower:
-                        model_match = True
-                        break
-                        
-                if not model_match:
-                    if 'implant5k' in udi.lower() and ('implant' in desc_lower or 'fixture' in desc_lower):
-                        model_match = True
-                    elif 'abutmentvc' in udi.lower() and ('abutment' in desc_lower or 'screw' in desc_lower):
-                        model_match = True
-                    elif 'restorationkr' in udi.lower() and ('abutment' in desc_lower or 'adapter' in desc_lower):
-                        model_match = True
-                    elif 'surgical' in udi.lower() and any(x in desc_lower for x in ["drill", "driver", "ratchet", "stopper", "taps", "pin", "punch", "sink", "bur"]):
-                        model_match = True
+                model_match = check_model_match(models, udi, desc_lower)
                 
                 if model_match:
                     ww_n += 1
