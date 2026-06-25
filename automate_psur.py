@@ -379,115 +379,123 @@ def run_automation():
     # Step 3: Update Table 20 (Table 5.4-1: Complaint Trend)
     # -------------------------------------------------------------
     table_20 = doc_p.tables[20]
-    
-    current_header = None
-    current_code = None
     calculated_rates = {}
     
-    for r_idx, row in enumerate(table_20.rows[2:]):
+    # Group rows in table_20
+    groups_t20 = []
+    current_group = None
+    for row in table_20.rows[2:]:
         row_text = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
         col0 = row_text[0]
         col1 = row_text[1]
-        
-        # Update current header info if this is a header row
         if '/' in col0 and not col1.startswith("Year"):
-            current_header = col0
-            current_code = col1
-            continue
-            
-        if col1.startswith("Year"):
-            year_match = re.search(r'\b(20\d{2})\b', col1)
-            year = year_match.group(1) if year_match else None
-            if not year:
-                continue
-                
-            # Parse row config
-            parts = current_header.split('/')
-            udi = parts[0].strip()
-            models_str = parts[1].strip()
-            models = [m.strip() for m in models_str.split(',') if m.strip()]
-            
-            clean_code = current_code.split()[0].strip()
-            
-            # Count matching complaints for this row
+            if current_group:
+                groups_t20.append(current_group)
+            current_group = {
+                'header_row': row,
+                'year_rows': [],
+                'header_text': col0,
+                'code_text': col1
+            }
+        elif col1.startswith("Year"):
+            if current_group:
+                year_match = re.search(r'\b(20\d{2})\b', col1)
+                year = year_match.group(1) if year_match else None
+                current_group['year_rows'].append({
+                    'row': row,
+                    'year': year,
+                    'text': row_text
+                })
+    if current_group:
+        groups_t20.append(current_group)
+
+    t20_rows_to_delete = []
+    
+    for g in groups_t20:
+        parts = g['header_text'].split('/')
+        udi = parts[0].strip()
+        models_str = parts[1].strip()
+        models = [m.strip() for m in models_str.split(',') if m.strip()]
+        clean_code = g['code_text'].split()[0].strip()
+        
+        # Calculate N for each year in the group
+        recent_years_data = []
+        for y_data in g['year_rows']:
+            year = y_data['year']
             eea_n = 0
             ww_n = 0
-            
             for comp in complaints:
                 if comp['year'] != year:
                     continue
-                # Match IMDRF code prefix
-                if not comp['imdrf_code'].startswith(clean_code):
+                if not comp['imdrf_code'].split()[0].strip().startswith(clean_code):
                     continue
-                    
-                # Match models / category
                 desc_lower = comp['desc'].lower()
-                model_match = check_model_match(models, udi, desc_lower)
-                
-                if model_match:
+                if check_model_match(models, udi, desc_lower):
                     ww_n += 1
                     if comp['is_eea']:
                         eea_n += 1
             
-            # Get sales denominator
-            # If UDI-DI is one of the four Class IIa/IIb in Table 19:
-            # We use the category sales from Table 19 (for WW Implant, we use Table 21 if present, but since Table 21 has another layout, let's check Table 19 Implant)
-            # Actually, as analyzed, the company uses Implant sales (from Table 19 or Table 21) as the denominator for all rows.
-            # To follow "N / Sales", we will lookup sales of the corresponding category.
-            # E.g. Implant -> Implant sales, Abutment/Restoration -> Abutment sales, Surgical -> Surgical sales.
-            # If the UDI is Class I (not in Table 19), we sum its sales from Annex B.
+            y_data['eea_n'] = eea_n
+            y_data['ww_n'] = ww_n
             
-            def get_sales_denominator(region_key):
-                # Class I Basic UDI-DIs: Surgical(I)XE and RestorationKR
-                if 'surgical(i)xe' in udi.lower():
-                    df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                    return get_models_sales(df_sales, models, year)
-                elif 'restorationkr' in udi.lower():
-                    # RestorationKR maps to Restoration/Abutment Class I. We can sum models or use Abutment sales.
-                    # As verified, RestorationKR complaints rate was computed using Implant sales or Abutment sales.
-                    # We will sum the specific Restoration models sales from Annex B:
-                    df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                    val = get_models_sales(df_sales, models, year)
-                    # If no sales of specific models (common for Class I components), fallback to total Abutment sales
-                    if val == 0:
-                        val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
-                    return val
-                else:
-                    # Class IIa/IIb UDIs: lookup from sales_data
-                    # If UDI matches a known UDI:
-                    matched_udi = None
-                    for k in sales_data[region_key].keys():
-                        if k.lower() in udi.lower() or udi.lower() in k.lower():
-                            matched_udi = k
-                            break
-                    if matched_udi:
-                        return sales_data[region_key][matched_udi].get(year, 0.0)
-                    # Fallback to Implant sales if not found
-                    return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
+            if year in ['2022', '2023', '2024', '2025']:
+                recent_years_data.append(ww_n)
+                
+        # Check if the group should be deleted
+        should_delete = len(recent_years_data) > 0 and all(n == 0 for n in recent_years_data)
+        if should_delete:
+            t20_rows_to_delete.append(g['header_row'])
+            for y_data in g['year_rows']:
+                t20_rows_to_delete.append(y_data['row'])
+        else:
+            # Update cells for this group
+            for y_data in g['year_rows']:
+                year = y_data['year']
+                eea_n = y_data['eea_n']
+                ww_n = y_data['ww_n']
+                
+                # Get sales denominator
+                def get_sales_denominator(region_key):
+                    if 'surgical(i)xe' in udi.lower():
+                        df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
+                        return get_models_sales(df_sales, models, year)
+                    elif 'restorationkr' in udi.lower():
+                        df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
+                        val = get_models_sales(df_sales, models, year)
+                        if val == 0:
+                            val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
+                        return val
+                    else:
+                        matched_udi = None
+                        for k in sales_data[region_key].keys():
+                            if k.lower() in udi.lower() or udi.lower() in k.lower():
+                                matched_udi = k
+                                break
+                        if matched_udi:
+                            return sales_data[region_key][matched_udi].get(year, 0.0)
+                        return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
 
-            eea_sales = get_sales_denominator('EEA+TR+XI')
-            ww_sales = get_sales_denominator('Worldwide')
-            
-            # Compute rates
-            eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
-            ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
-            
-            # Formatting
-            eea_rate_str = format_rate_str(eea_n, eea_rate)
-            ww_rate_str = format_rate_str(ww_n, ww_rate)
-            
-            # Update cells
-            # Table 20 columns: 0: Model group, 1: Year, 2: EEA N, 3: EEA Rate, 4: WW N, 5: WW Rate, 6: Trend
-            # Row index in table_20 is r_idx + 2
-            t20_row = table_20.rows[r_idx + 2]
-            
-            update_cell_text(t20_row.cells[2], str(eea_n))
-            update_cell_text(t20_row.cells[3], eea_rate_str)
-            update_cell_text(t20_row.cells[4], str(ww_n))
-            update_cell_text(t20_row.cells[5], ww_rate_str)
-            calculated_rates[(udi, clean_code, year)] = (ww_n, ww_rate)
-            
-            print(f"Updated Table 20 Row {r_idx+2}: {current_header} | {year} | EEA: {eea_n} ({eea_rate_str}), WW: {ww_n} ({ww_rate_str})")
+                eea_sales = get_sales_denominator('EEA+TR+XI')
+                ww_sales = get_sales_denominator('Worldwide')
+                
+                eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
+                ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
+                
+                eea_rate_str = format_rate_str(eea_n, eea_rate)
+                ww_rate_str = format_rate_str(ww_n, ww_rate)
+                
+                update_cell_text(y_data['row'].cells[2], str(eea_n))
+                update_cell_text(y_data['row'].cells[3], eea_rate_str)
+                update_cell_text(y_data['row'].cells[4], str(ww_n))
+                update_cell_text(y_data['row'].cells[5], ww_rate_str)
+                calculated_rates[(udi, clean_code, year)] = (ww_n, ww_rate)
+                
+                print(f"Updated Table 20: {g['header_text']} | {year} | EEA: {eea_n} ({eea_rate_str}), WW: {ww_n} ({ww_rate_str})")
+
+    # Delete marked rows from table_20
+    for r in t20_rows_to_delete:
+        r._element.getparent().remove(r._element)
+    print(f"Deleted {len(t20_rows_to_delete)} rows from Table 20. Remaining rows: {len(table_20.rows)}")
 
     # -------------------------------------------------------------
     # Step 3.5: Update Section 5.2 and Section 5.4 Narratives
@@ -554,85 +562,116 @@ def run_automation():
     print(f"Updating Annex C Table 1 trend statistics...")
     table_c1 = doc_c.tables[1]
     
-    current_header = None
-    current_code = None
-    
-    for r_idx, row in enumerate(table_c1.rows[2:]):
+    groups_c1 = []
+    current_group = None
+    for row in table_c1.rows[2:]:
         row_text = [cell.text.strip().replace('\n', ' ') for cell in row.cells]
         col0 = row_text[0]
         col1 = row_text[1]
-        
         if '/' in col0 and not col1.startswith("Year"):
-            current_header = col0
-            current_code = col1
-            continue
-            
-        if col1.startswith("Year"):
-            year_match = re.search(r'\b(20\d{2})\b', col1)
-            year = year_match.group(1) if year_match else None
-            if not year:
-                continue
-                
-            parts = current_header.split('/')
-            udi = parts[0].strip()
-            models_str = parts[1].strip()
-            models = [m.strip() for m in models_str.split(',') if m.strip()]
-            
-            clean_code = current_code.split()[0].strip()
-            
+            if current_group:
+                groups_c1.append(current_group)
+            current_group = {
+                'header_row': row,
+                'year_rows': [],
+                'header_text': col0,
+                'code_text': col1
+            }
+        elif col1.startswith("Year"):
+            if current_group:
+                year_match = re.search(r'\b(20\d{2})\b', col1)
+                year = year_match.group(1) if year_match else None
+                current_group['year_rows'].append({
+                    'row': row,
+                    'year': year,
+                    'text': row_text
+                })
+    if current_group:
+        groups_c1.append(current_group)
+
+    c1_rows_to_delete = []
+    
+    for g in groups_c1:
+        parts = g['header_text'].split('/')
+        udi = parts[0].strip()
+        models_str = parts[1].strip()
+        models = [m.strip() for m in models_str.split(',') if m.strip()]
+        clean_code = g['code_text'].split()[0].strip()
+        
+        # Calculate N for each year in the group
+        recent_years_data = []
+        for y_data in g['year_rows']:
+            year = y_data['year']
             eea_n = 0
             ww_n = 0
-            
             for comp in complaints:
                 if comp['year'] != year:
                     continue
-                if not comp['imdrf_code'].startswith(clean_code):
+                if not comp['imdrf_code'].split()[0].strip().startswith(clean_code):
                     continue
-                    
-                # Match models / category
                 desc_lower = comp['desc'].lower()
-                model_match = check_model_match(models, udi, desc_lower)
-                
-                if model_match:
+                if check_model_match(models, udi, desc_lower):
                     ww_n += 1
                     if comp['is_eea']:
                         eea_n += 1
             
-            # Lookup sales using the same helper logic
-            def get_sales_denominator_c1(region_key):
-                if 'surgical(i)xe' in udi.lower():
-                    df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                    return get_models_sales(df_sales, models, year)
-                elif 'restorationkr' in udi.lower():
-                    df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
-                    val = get_models_sales(df_sales, models, year)
-                    if val == 0:
-                        val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
-                    return val
-                else:
-                    matched_udi = None
-                    for k in sales_data[region_key].keys():
-                        if k.lower() in udi.lower() or udi.lower() in k.lower():
-                            matched_udi = k
-                            break
-                    if matched_udi:
-                        return sales_data[region_key][matched_udi].get(year, 0.0)
-                    return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
+            y_data['eea_n'] = eea_n
+            y_data['ww_n'] = ww_n
+            
+            if year in ['2022', '2023', '2024', '2025']:
+                recent_years_data.append(ww_n)
+                
+        # Check if the group should be deleted
+        should_delete = len(recent_years_data) > 0 and all(n == 0 for n in recent_years_data)
+        if should_delete:
+            c1_rows_to_delete.append(g['header_row'])
+            for y_data in g['year_rows']:
+                c1_rows_to_delete.append(y_data['row'])
+        else:
+            # Update cells for this group
+            for y_data in g['year_rows']:
+                year = y_data['year']
+                eea_n = y_data['eea_n']
+                ww_n = y_data['ww_n']
+                
+                def get_sales_denominator_c1(region_key):
+                    if 'surgical(i)xe' in udi.lower():
+                        df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
+                        return get_models_sales(df_sales, models, year)
+                    elif 'restorationkr' in udi.lower():
+                        df_sales = df_eea if region_key == 'EEA+TR+XI' else df_ww
+                        val = get_models_sales(df_sales, models, year)
+                        if val == 0:
+                            val = sales_data[region_key].get('471987540AbutmentVC', {}).get(year, 0.0)
+                        return val
+                    else:
+                        matched_udi = None
+                        for k in sales_data[region_key].keys():
+                            if k.lower() in udi.lower() or udi.lower() in k.lower():
+                                matched_udi = k
+                                break
+                        if matched_udi:
+                            return sales_data[region_key][matched_udi].get(year, 0.0)
+                        return sales_data[region_key].get('471987540Implant5K', {}).get(year, 0.0)
 
-            eea_sales = get_sales_denominator_c1('EEA+TR+XI')
-            ww_sales = get_sales_denominator_c1('Worldwide')
-            
-            eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
-            ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
-            # Formatting
-            eea_rate_str = format_rate_str(eea_n, eea_rate)
-            ww_rate_str = format_rate_str(ww_n, ww_rate)
-            
-            t_row = table_c1.rows[r_idx + 2]
-            update_cell_text(t_row.cells[2], str(eea_n))
-            update_cell_text(t_row.cells[3], eea_rate_str)
-            update_cell_text(t_row.cells[4], str(ww_n))
-            update_cell_text(t_row.cells[5], ww_rate_str)
+                eea_sales = get_sales_denominator_c1('EEA+TR+XI')
+                ww_sales = get_sales_denominator_c1('Worldwide')
+                
+                eea_rate = (eea_n / eea_sales) * 100.0 if eea_sales > 0 else 0.0
+                ww_rate = (ww_n / ww_sales) * 100.0 if ww_sales > 0 else 0.0
+                
+                eea_rate_str = format_rate_str(eea_n, eea_rate)
+                ww_rate_str = format_rate_str(ww_n, ww_rate)
+                
+                update_cell_text(y_data['row'].cells[2], str(eea_n))
+                update_cell_text(y_data['row'].cells[3], eea_rate_str)
+                update_cell_text(y_data['row'].cells[4], str(ww_n))
+                update_cell_text(y_data['row'].cells[5], ww_rate_str)
+
+    # Delete marked rows from table_c1
+    for r in c1_rows_to_delete:
+        r._element.getparent().remove(r._element)
+    print(f"Deleted {len(c1_rows_to_delete)} rows from Annex C Table 1. Remaining rows: {len(table_c1.rows)}")
             
     print(f"Saving updated Annex C report back to: {annex_c_path}")
     doc_c.save(annex_c_path)
