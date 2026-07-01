@@ -1,0 +1,16 @@
+# Confidential Medical Device Data & Document Files
+*.docx
+*.xlsx
+*.xls
+*.csv
+*.pdf
+~$*.docx
+~$*.xlsx
+
+# Python cache & build files
+__pycache__/
+*.pyc
+
+# Local Environment & Temp files
+.DS_Store
+Thumbs.db
